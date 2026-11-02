@@ -269,6 +269,7 @@ const GT_URLS = [
   "https://translate.google.com/translate_a/t",
 ];
 const GT_PROXY = "https://r.jina.ai/";
+const GT_PROXY2 = "https://api.cors.lol/?url=";
 let gtHostIdx = 0;
 
 function gtParse(v) {
@@ -304,16 +305,18 @@ async function tryGt(url, timeoutMs) {
 async function gtBatch(lines, target) {
   const query = gtQuery(lines, target);
   const direct = GT_URLS.map((h) => `${h}?${query}`);
-  // редът: директните хостове от gtHostIdx нататък, накрая jina (2 опита)
+  // редът: директните хостове от gtHostIdx нататък, после cors.lol, накрая jina
   const order = [];
   for (let k = 0; k < GT_URLS.length; k++) order.push(direct[(gtHostIdx + k) % GT_URLS.length]);
+  order.push(GT_PROXY2 + encodeURIComponent(direct[0]));
   const jinaUrl = GT_PROXY + direct[0];
   order.push(jinaUrl, jinaUrl);
   let lastErr = null;
   for (const url of order) {
     const viaJina = url.startsWith(GT_PROXY);
+    const viaProxy = viaJina || url.startsWith(GT_PROXY2);
     try {
-      const out = await tryGt(url, viaJina ? 40000 : 20000);
+      const out = await tryGt(url, viaProxy ? 40000 : 20000);
       gtHostIdx = viaJina ? 0 : (GT_URLS.indexOf(url.split("?")[0]) + 1) % GT_URLS.length;
       return out;
     } catch (e) {
@@ -525,6 +528,14 @@ const server = http.createServer(async (req, res) => {
         } catch (e) {
           out.push({ trans: "lingva", host, status: "FAIL", error: String(e.message || e).slice(0, 60) });
         }
+      }
+      // cors.lol (прокси, чиито IP са приемливи за Google)
+      try {
+        const px = GT_PROXY2 + encodeURIComponent(GT_URLS[0] + "?client=dict-chrome-ex&sl=auto&tl=bg&q=Hello&q=world");
+        const text = await fetchText(px, 30000);
+        out.push({ trans: "cors.lol", host: "api.cors.lol", status: "OK", head: extractGtJson(text) });
+      } catch (e) {
+        out.push({ trans: "cors.lol", host: "api.cors.lol", status: "FAIL", error: String(e.message || e).slice(0, 60) });
       }
       // jina (прокси канал – връща JSON-а на Google от свои IP)
       try {
