@@ -258,13 +258,17 @@ function buildTranslatedSrt(cues, translated) {
  *   /translate_a/t?client=dict-chrome-ex&sl=..&tl=..&q=..&q=..
  * Проверено на живо: пакети с няколко q= върщат преведените да обратно.
  * ------------------------------------------------------------------ */
+/**
+ * Мрежов маршрут за превод: директните Google хостове първо; от облачни сървъри
+ * Google често отговаря 429 (блокира datacenter IP) – тогава минаваме на
+ * r.jina.ai, който проксира заявката от СВОИ IP и връща JSON-а на Google.
+ */
 const GT_URLS = [
   "https://translate.googleapis.com/translate_a/t",
   "https://clients5.google.com/translate_a/t",
   "https://translate.google.com/translate_a/t",
 ];
-// хостовете се обикалят, защото някои облаци (datacenter IP) са третирани
-// по-строго от Google на translate.googleapis.com
+const GT_PROXY = "https://r.jina.ai/";
 let gtHostIdx = 0;
 
 function gtParse(v) {
@@ -273,25 +277,48 @@ function gtParse(v) {
   return null;
 }
 
-async function gtBatch(lines, target) {
+/** Джина добавя заглавка и "Markdown Content:" преди JSON-а. */
+function extractGtJson(text) {
+  const start = text.indexOf("[[");
+  const end = text.lastIndexOf("]]");
+  if (start < 0 || end <= start) throw new Error("jina: няма JSON");
+  return JSON.parse(text.slice(start, end + 2));
+}
+
+function gtQuery(lines, target) {
   const params = new URLSearchParams();
   params.set("client", "dict-chrome-ex");
   params.set("sl", "auto");
   params.set("tl", target);
   for (const l of lines) params.append("q", l);
+  return params.toString();
+}
+
+async function tryGt(url, timeoutMs) {
+  const text = await fetchText(url, timeoutMs);
+  const arr = extractGtJson(text);
+  if (!Array.isArray(arr) || !arr.length) throw new Error("неочакван отговор от Google Translate");
+  return arr.map(gtParse);
+}
+
+async function gtBatch(lines, target) {
+  const query = gtQuery(lines, target);
+  const direct = GT_URLS.map((h) => `${h}?${query}`);
+  // редът: директните хостове от gtHostIdx нататък, накрая jina (2 опита)
+  const order = [];
+  for (let k = 0; k < GT_URLS.length; k++) order.push(direct[(gtHostIdx + k) % GT_URLS.length]);
+  const jinaUrl = GT_PROXY + direct[0];
+  order.push(jinaUrl, jinaUrl);
   let lastErr = null;
-  const startHost = gtHostIdx;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const url = `${GT_URLS[startHost]}?${params.toString()}`;
+  for (const url of order) {
+    const viaJina = url.startsWith(GT_PROXY);
     try {
-      const arr = JSON.parse(await fetchText(url, 25000));
-      if (!Array.isArray(arr) || arr.length !== lines.length) throw new Error("неочакван отговор от Google Translate");
-      return arr.map(gtParse);
+      const out = await tryGt(url, viaJina ? 40000 : 20000);
+      gtHostIdx = viaJina ? 0 : (GT_URLS.indexOf(url.split("?")[0]) + 1) % GT_URLS.length;
+      return out;
     } catch (e) {
       lastErr = e;
-      // следващ опит на следващия хост
-      gtHostIdx = (gtHostIdx + 1) % GT_URLS.length;
-      await new Promise((r) => setTimeout(r, 700 * attempt));
+      if (viaJina) await new Promise((r) => setTimeout(r, 3000)); // jina rpm лимит
     }
   }
   throw lastErr;
@@ -498,6 +525,14 @@ const server = http.createServer(async (req, res) => {
         } catch (e) {
           out.push({ trans: "lingva", host, status: "FAIL", error: String(e.message || e).slice(0, 60) });
         }
+      }
+      // jina (прокси канал – връща JSON-а на Google от свои IP)
+      try {
+        const jinaUrl = GT_PROXY + GT_URLS[0] + "?client=dict-chrome-ex&sl=auto&tl=bg&q=Hello&q=world";
+        const text = await fetchText(jinaUrl, 40000);
+        out.push({ trans: "jina", host: "r.jina.ai", status: "OK", head: extractGtJson(text) });
+      } catch (e) {
+        out.push({ trans: "jina", host: "r.jina.ai", status: "FAIL", error: String(e.message || e).slice(0, 60) });
       }
       return send(res, 200, JSON.stringify(out, null, 1));
     }
