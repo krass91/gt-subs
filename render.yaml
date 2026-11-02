@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: gt-subtitles
+    runtime: node
+    plan: free
+    buildCommand: "true"
+    startCommand: npm start
+    envVars:
+      - key: DEFAULT_LANG
+        value: bul # език по подразбиране (bul = български, виж src/server.js)
+
