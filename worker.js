@@ -487,6 +487,21 @@ export default {
         return json(JSON.stringify(out, null, 1));
       }
 
+      if (path === "/debug-batch") {
+        const lines = ["Hello world", "Good morning", "Where are you going tonight?", "The rain in Spain falls mainly on the plain"];
+        const query = gtQuery(lines, "bg");
+        const out = [];
+        for (const [k, host] of GT_URLS.entries()) {
+          const url = `${host}?${query}`;
+          try {
+            const text = await fetchText(url, 25000);
+            out.push({ host: new URL(host).hostname, ok: true, parsed: (() => { try { return extractGtJson(text); } catch (e) { return "PARSE: " + String(e.message).slice(0, 60) + " | RAW: " + text.slice(0, 80); } })() });
+            break;
+          } catch (e) { out.push({ host: new URL(host).hostname, ok: false, error: String(e.message).slice(0, 80) }); }
+        }
+        return json(JSON.stringify(out, null, 1));
+      }
+
       /* Преведено SRT: /gt/<payload>.srt */
       const gtMatch = path.match(/^\/gt\/([A-Za-z0-9_-]+)\.srt$/);
       if (gtMatch) {
