@@ -489,16 +489,35 @@ export default {
 
       if (path === "/debug-batch") {
         const lines = ["Hello world", "Good morning", "Where are you going tonight?", "The rain in Spain falls mainly on the plain"];
-        const query = gtQuery(lines, "bg");
         const out = [];
-        for (const [k, host] of GT_URLS.entries()) {
-          const url = `${host}?${query}`;
-          try {
-            const text = await fetchText(url, 25000);
-            out.push({ host: new URL(host).hostname, ok: true, parsed: (() => { try { return extractGtJson(text); } catch (e) { return "PARSE: " + String(e.message).slice(0, 60) + " | RAW: " + text.slice(0, 80); } })() });
-            break;
-          } catch (e) { out.push({ host: new URL(host).hostname, ok: false, error: String(e.message).slice(0, 80) }); }
-        }
+        // A: текстс multi-q (client=dict-chrome-ex)
+        const queryA = gtQuery(lines, "bg");
+        try {
+          const text = await fetchText(`${GT_URLS[0]}?${queryA}`, 25000);
+          out.push({ mode: "A multi-q", ok: true, parsed: (() => { try { return extractGtJson(text); } catch (e) { return "PARSE-ERR: " + text.slice(0, 80); } })() });
+        } catch (e) { out.push({ mode: "A multi-q", ok: false, error: String(e.message).slice(0, 70) }); }
+        // B: слепени в един q (browser pattern client=gtx&dt=t)
+        const paramsB = new URLSearchParams();
+        paramsB.set("client", "gtx");
+        paramsB.set("sl", "auto");
+        paramsB.set("tl", "bg");
+        paramsB.set("dt", "t");
+        paramsB.set("q", lines.join("\n"));
+        try {
+          const text = await fetchText(`${GT_URLS[0]}?${paramsB.toString()}`, 25000);
+          out.push({ mode: "B joined gtx", ok: true, head: text.slice(0, 220) });
+        } catch (e) { out.push({ mode: "B joined gtx", ok: false, error: String(e.message).slice(0, 70) }); }
+        // C: слепени в един q (dict-chrome-ex)
+        const paramsC = new URLSearchParams();
+        paramsC.set("client", "dict-chrome-ex");
+        paramsB.set("sl", "auto");
+        paramsC.set("sl", "auto");
+        paramsC.set("tl", "bg");
+        paramsC.set("q", lines.join("\n"));
+        try {
+          const text = await fetchText(`${GT_URLS[0]}?${paramsC.toString()}`, 25000);
+          out.push({ mode: "C joined dict", ok: true, head: text.slice(0, 160) });
+        } catch (e) { out.push({ mode: "C joined dict", ok: false, error: String(e.message).slice(0, 70) }); }
         return json(JSON.stringify(out, null, 1));
       }
 
