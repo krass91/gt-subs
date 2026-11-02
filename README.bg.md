@@ -28,7 +28,24 @@ addon/
 
 ---
 
-## Вариант А: Безплатно на онлайн хостинг (Render) – препоръчително
+## Вариант В: Cloudflare Worker (безплатно, най-стабилно) – за телефон и TV
+
+Google блокира безплатни облаци (Render), затова най-стабилният вариант е Cloudflare:
+
+1. Отвори този линк и логни се с GitHub (акаунт **krass91**):
+   **https://deploy.workers.cloudflare.com/?url=https://github.com/krass91/gt-subs**
+2. Ако Cloudflare те пита да „Import repository" – доизбери repo-то и натисни **Deploy**.
+3. Готов! Адресът ще е от типа `https://gt-subs.ВАШЕ-ИМЕ.workers.dev` – надолу на
+   страницата на Worker-а ще видиш мес от типа:
+   `https://gt-subs.<cname>.workers.dev`
+4. Сложи `/manifest.json` след адреса и дава същото в Stremio/Nuvio.
+
+(Алтернативно през dashboard: workers.cloudflare.com → Create Worker → Quick edit →
+paste работата от `worker.js` → Deploy.)
+
+---
+
+## Вариант А: Безплатно на онлайн хостинг (Render) – десктоп Stremio
 
 1. Качете папката на GitHub (PowerShell):
 
