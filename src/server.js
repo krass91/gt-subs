@@ -258,7 +258,14 @@ function buildTranslatedSrt(cues, translated) {
  *   /translate_a/t?client=dict-chrome-ex&sl=..&tl=..&q=..&q=..
  * Проверено на живо: пакети с няколко q= върщат преведените да обратно.
  * ------------------------------------------------------------------ */
-const GT_URL = "https://translate.googleapis.com/translate_a/t";
+const GT_URLS = [
+  "https://translate.googleapis.com/translate_a/t",
+  "https://clients5.google.com/translate_a/t",
+  "https://translate.google.com/translate_a/t",
+];
+// хостовете се обикалят, защото някои облаци (datacenter IP) са третирани
+// по-строго от Google на translate.googleapis.com
+let gtHostIdx = 0;
 
 function gtParse(v) {
   if (typeof v === "string") return v;
@@ -273,13 +280,17 @@ async function gtBatch(lines, target) {
   params.set("tl", target);
   for (const l of lines) params.append("q", l);
   let lastErr = null;
+  const startHost = gtHostIdx;
   for (let attempt = 1; attempt <= 3; attempt++) {
+    const url = `${GT_URLS[startHost]}?${params.toString()}`;
     try {
-      const arr = JSON.parse(await fetchText(`${GT_URL}?${params.toString()}`, 25000));
+      const arr = JSON.parse(await fetchText(url, 25000));
       if (!Array.isArray(arr) || arr.length !== lines.length) throw new Error("неочакван отговор от Google Translate");
       return arr.map(gtParse);
     } catch (e) {
       lastErr = e;
+      // следващ опит на следващия хост
+      gtHostIdx = (gtHostIdx + 1) % GT_URLS.length;
       await new Promise((r) => setTimeout(r, 700 * attempt));
     }
   }
@@ -456,6 +467,21 @@ const server = http.createServer(async (req, res) => {
         uptime: Math.round(process.uptime()) + "s",
         caches: { pages: pageCache.size(), srts: srtCache.size(), translated: resultCache.size() },
       }));
+    }
+
+    /* Диагностика на хостовете за превод */
+    if (path === "/debug-gt") {
+      const out = [];
+      for (const url of GT_URLS) {
+        const host = new URL(url).hostname;
+        try {
+          const text = await fetchText(`${url}?client=dict-chrome-ex&sl=auto&tl=bg&q=Hello&q=world`, 20000);
+          out.push({ host, status: "OK", head: text.slice(0, 80) });
+        } catch (e) {
+          out.push({ host, status: "FAIL", error: String(e.message || e).slice(0, 80) });
+        }
+      }
+      return send(res, 200, JSON.stringify(out, null, 1));
     }
 
     /* Готово преведено SRT: /gt/<payload>.srt */
