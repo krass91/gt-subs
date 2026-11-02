@@ -470,15 +470,33 @@ const server = http.createServer(async (req, res) => {
     }
 
     /* Диагностика на хостовете за превод */
-    if (path === "/debug-gt") {
+    if (path === "/debug-gt" || path === "/debug-alt") {
       const out = [];
       for (const url of GT_URLS) {
         const host = new URL(url).hostname;
         try {
           const text = await fetchText(`${url}?client=dict-chrome-ex&sl=auto&tl=bg&q=Hello&q=world`, 20000);
-          out.push({ host, status: "OK", head: text.slice(0, 80) });
+          out.push({ trans: "google", host, status: "OK", head: text.slice(0, 60) });
         } catch (e) {
-          out.push({ host, status: "FAIL", error: String(e.message || e).slice(0, 80) });
+          out.push({ trans: "google", host, status: "FAIL", error: String(e.message || e).slice(0, 60) });
+        }
+      }
+      // MyMemory (без ключ)
+      for (const host of ["mymemory.translated.net"]) {
+        try {
+          const text = await fetchText(`https://${host}/api/get?q=Hello%20world&langpair=en|bg`, 20000);
+          out.push({ trans: "mymemory", host, status: "OK", head: text.slice(0, 100) });
+        } catch (e) {
+          out.push({ trans: "mymemory", host, status: "FAIL", error: String(e.message || e).slice(0, 60) });
+        }
+      }
+      // Lingva (безключово огледало на Google)
+      for (const host of ["lingva.ml", "translate.plausibility.cloud"]) {
+        try {
+          const text = await fetchText(`https://${host}/api/v1/en/bg/Hello%20world`, 20000);
+          out.push({ trans: "lingva", host, status: "OK", head: text.slice(0, 100) });
+        } catch (e) {
+          out.push({ trans: "lingva", host, status: "FAIL", error: String(e.message || e).slice(0, 60) });
         }
       }
       return send(res, 200, JSON.stringify(out, null, 1));
